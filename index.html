@@ -55,14 +55,15 @@
             transform: translateY(0);
         }
         
-        /* Print-specific styles: Sirf Receipt Modal ko print karne ke liye */
+        /* Print-specific styles: Sirf Receipt Modal ya Report Print Area ko print karne ke liye */
         @media print {
-            /* Main app content chhupayein */
-            #app {
+            /* Default roop se sab kuch chhipayein */
+            #app, #receipt-modal, #quantity-modal, #status-toast, #report-print-area, #confirmation-modal { 
                 display: none !important; 
             }
-            /* Modal ko print karne ke liye reset karein */
-            #receipt-modal {
+            
+            /* Agar body par 'printing-receipt' class hai, to receipt dikhayein */
+            .printing-receipt #receipt-modal {
                 position: static !important;
                 display: flex !important;
                 width: 100%;
@@ -70,8 +71,26 @@
                 margin: 0;
                 padding: 0;
                 background: none;
-                align-items: flex-start; /* Receipt ko page ke top par align karein */
+                align-items: flex-start;
             }
+            .printing-receipt .print-area {
+                width: 300px;
+                max-width: 300px;
+                margin: 0 auto;
+                padding: 10px;
+                border: none;
+            }
+            
+            /* Agar body par 'printing-report' class hai, to report area dikhayein */
+            .printing-report #report-print-area {
+                display: block !important;
+                position: static !important;
+                width: 100%;
+                max-width: 800px;
+                margin: 0 auto;
+                padding: 0;
+            }
+
             /* Shadow aur borders hata dein */
             .shadow-2xl, .shadow-md, .rounded-xl {
                 box-shadow: none !important;
@@ -80,14 +99,6 @@
             /* Print buttons chhupayein */
             .print\:hidden { 
                 display: none !important;
-            }
-            /* Receipt content ke liye chhota width set karein */
-            .print-area {
-                width: 300px;
-                max-width: 300px;
-                margin: 0 auto;
-                padding: 10px;
-                border: none;
             }
         }
     </style>
@@ -130,6 +141,14 @@
                     </form>
                 </div>
                 
+                <!-- Product Filter Input -->
+                <div class="relative mb-4">
+                    <input type="text" id="product-filter-input" oninput="renderProducts()" 
+                           placeholder="Filter products by name..."
+                           class="w-full p-2 pl-10 border border-indigo-300 rounded-lg text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                    <svg class="absolute left-3 top-2.5 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                </div>
+
                 <div id="product-list" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
                     <!-- JavaScript dwara product buttons yahan render kiye jayenge -->
                     <p id="loading-message" class="text-slate-500 col-span-full">Products loading...</p>
@@ -197,9 +216,38 @@
                     </button>
                 </div>
                 
-                <!-- History Section -->
+                <!-- History Section (Filter Added Here) -->
                 <div class="bg-white p-4 rounded-xl shadow-lg">
                     <h2 class="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Sales History</h2>
+                    
+                    <!-- History Controls -->
+                    <div class="space-y-3 mb-3">
+                        <!-- Filter Input -->
+                        <div class="relative">
+                            <input type="text" id="history-filter-input" oninput="renderSalesHistory()" 
+                                placeholder="Filter by ID, Date, Total, or Item Name..."
+                                class="w-full p-2 pl-10 border border-indigo-300 rounded-lg text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                            <svg class="absolute left-3 top-2.5 w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                        </div>
+
+                        <!-- Date Filter & Print Button -->
+                        <div class="flex justify-between items-center">
+                            <!-- Naya: Today's Filter Checkbox -->
+                            <label class="flex items-center space-x-2 text-sm text-slate-700 font-medium cursor-pointer">
+                                <input type="checkbox" id="today-filter-checkbox" onchange="renderSalesHistory()" 
+                                       class="rounded text-indigo-600 focus:ring-indigo-500">
+                                <span>Show Today's Sales Only</span>
+                            </label>
+
+                            <!-- Naya: Print Filtered Button -->
+                            <button id="print-filtered-button" onclick="printFilteredHistory()" 
+                                    class="bg-blue-500 hover:bg-blue-600 text-white text-xs font-medium py-1 px-3 rounded-md transition duration-150 shadow disabled:opacity-50"
+                                    disabled>
+                                🖨️ Print List
+                            </button>
+                        </div>
+                    </div>
+
                     <div id="sales-history" class="text-sm space-y-1 h-56 overflow-y-auto">
                         <p class="text-slate-500 italic">Loading sales records...</p>
                     </div>
@@ -239,8 +287,26 @@
                 <button onclick="printReceipt()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg shadow-md transition duration-150 transform hover:scale-[1.01] focus:outline-none focus:ring-4 focus:ring-indigo-300">
                     🖨️ Print Receipt
                 </button>
-                <button onclick="closeReceiptModal()" class="w-full bg-green-500 hover:bg-green-600 text-white font-medium py-2 rounded-lg shadow transition duration-150 focus:outline-none focus:ring-2 focus:ring-green-300">
+                <!-- Is button ka text aur color JavaScript dwara context ke aadhar par badla jayega -->
+                <button id="modal-action-button" onclick="closeReceiptModal()" class="w-full bg-green-500 hover:bg-green-600 text-white font-medium py-2 rounded-lg shadow transition duration-150 focus:outline-none focus:ring-2 focus:ring-green-300">
                     Complete & Clear Sale
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 3. Custom Confirmation Modal (Hidden) for Deletion -->
+    <div id="confirmation-modal" class="modal-overlay hidden">
+        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm transform transition-all">
+            <h3 class="text-xl font-bold text-red-700 mb-4">Confirm Deletion</h3>
+            <p class="text-slate-600 mb-6">Are you sure you want to delete the product: <span id="confirm-item-name" class="font-semibold text-slate-800"></span>? This action cannot be undone, aur is product ke saare items cart se bhi hat jayenge.</p>
+            
+            <div class="flex justify-end space-x-3">
+                <button onclick="hideModal('confirmation-modal')" class="bg-slate-300 hover:bg-slate-400 text-slate-800 font-medium py-2 px-4 rounded-lg transition duration-150 shadow">
+                    Cancel
+                </button>
+                <button onclick="confirmDeletion()" id="modal-confirm-button" class="bg-red-600 hover:bg-red-700 text-white font-bold py-2 px-4 rounded-lg transition duration-150 shadow">
+                    Delete Permanently
                 </button>
             </div>
         </div>
@@ -250,6 +316,9 @@
     <div id="status-toast" class="p-4 bg-indigo-600 text-white rounded-lg shadow-xl font-semibold">
         <!-- Message JavaScript dwara set kiya jayega -->
     </div>
+    
+    <!-- Report Print Area (Sirf printing ke liye) -->
+    <div id="report-print-area" class="hidden"></div>
 
     <script type="module">
         // --- LOCAL STORAGE KEYS ---
@@ -277,7 +346,9 @@
         let editingProductId = null; 
         let discountPercentage = 0; 
         let currentProductIdForModal = null; 
-        let lastTransaction = null; // Global variable to hold the transaction data for the receipt
+        let lastTransaction = null; 
+        let isHistoryView = false; 
+        let productIdToDelete = null; // Naya: Product ID deletion ke liye store karna
 
         // --- UTILITY FUNCTIONS (Standard Functions) ---
 
@@ -288,6 +359,18 @@
         // Currency ko bina 'PKR' ke format karta hai
         function formatRawCurrency(amount) {
             return amount.toFixed(2);
+        }
+        
+        /**
+         * Check karta hai ki diya gaya timestamp aaj ki date ka hai ya nahi.
+         */
+        function isToday(timestamp) {
+            if (!timestamp) return false;
+            const today = new Date();
+            const saleDate = new Date(timestamp);
+            return saleDate.getDate() === today.getDate() &&
+                   saleDate.getMonth() === today.getMonth() &&
+                   saleDate.getFullYear() === today.getFullYear();
         }
 
         function displayError(message) {
@@ -429,7 +512,7 @@
         window.deleteSale = function(transactionId) {
             salesHistory = salesHistory.filter(sale => sale.transactionId !== transactionId);
             saveSalesHistory();
-            renderSalesHistory();
+            renderSalesHistory(); // This will now correctly call the global function
             showStatusToast(`Sale #${transactionId} deleted.`);
             console.log(`Transaction #${transactionId} removed from history.`);
         } 
@@ -522,13 +605,52 @@
             }
 
             saveProducts();
-            renderProducts();
-
+            window.renderProducts(); // Update: Now calling through window
+            
             document.getElementById('new-product-form').reset();
             editingProductId = null;
             document.getElementById('form-submit-button').textContent = 'Save Product';
             toggleProductForm(false);
         } 
+        
+        /**
+         * Naya Function: Product deletion ke liye confirmation modal dikhata hai.
+         */
+        window.deleteProduct = function(productId) {
+            const product = findProduct(productId);
+            if (!product) return;
+            
+            productIdToDelete = productId;
+            document.getElementById('confirm-item-name').textContent = product.name;
+            
+            showModal('confirmation-modal');
+        }
+
+        /**
+         * Naya Function: Confirmation ke baad product delete karta hai.
+         */
+        window.confirmDeletion = function() {
+            if (productIdToDelete === null) return;
+            
+            const id = productIdToDelete;
+            const productName = findProduct(id)?.name || 'Product';
+
+            // 1. Product ko products array se hatayein
+            products = products.filter(p => p.id !== id);
+            saveProducts();
+
+            // 2. Cart se is product ke items hatayein
+            cart = cart.filter(item => item.id !== id);
+            saveCart();
+
+            // 3. UI update karein
+            renderProducts(); 
+            renderCart();
+            hideModal('confirmation-modal');
+            showStatusToast(`${productName} successfully deleted. Cart also updated.`, 'error');
+
+            productIdToDelete = null; 
+        }
 
         // --- CART MANAGEMENT (Window scope mein rakha gaya) ---
 
@@ -649,9 +771,10 @@
             
             // 1. Sale save karein
             saveSaleToLocal(transaction); 
-            renderSalesHistory();
+            window.renderSalesHistory();
 
-            // 2. Receipt Modal kholein aur transaction data pass karein
+            // 2. Receipt Modal kholein (naya sale context)
+            isHistoryView = false; // New sale context
             openReceiptModal(transaction);
         } 
         
@@ -662,10 +785,36 @@
             lastTransaction = transaction;
             const receiptContentElement = document.getElementById('receipt-content');
             receiptContentElement.innerHTML = generateReceiptHTML(transaction);
+            
+            // Button context set karein
+            const actionButton = document.getElementById('modal-action-button');
+            if (isHistoryView) {
+                actionButton.textContent = 'Close Receipt View';
+                actionButton.classList.remove('bg-green-500', 'hover:bg-green-600');
+                actionButton.classList.add('bg-slate-500', 'hover:bg-slate-600');
+            } else {
+                actionButton.textContent = 'Complete & Clear Sale';
+                actionButton.classList.remove('bg-slate-500', 'hover:bg-slate-600');
+                actionButton.classList.add('bg-green-500', 'hover:bg-green-600');
+            }
+
             showModal('receipt-modal');
-            showStatusToast(`Sale #${transaction.transactionId} recorded. Receipt ready.`, 'success');
+            showStatusToast(`Receipt for Sale #${transaction.transactionId} ready.`, 'success');
         }
 
+        /**
+         * Sales History se transaction ID ka upyog karke receipt modal kholta hai.
+         */
+        window.openReceiptFromHistory = function(transactionId) {
+            const transaction = salesHistory.find(sale => sale.transactionId === transactionId);
+            if (transaction) {
+                isHistoryView = true; // History context
+                openReceiptModal(transaction); 
+            } else {
+                showStatusToast(`Transaction ID #${transactionId} not found.`, 'error');
+            }
+        }
+        
         /**
          * Receipt print karta hai.
          */
@@ -674,19 +823,30 @@
                 showStatusToast("Error: No transaction data to print.", 'error');
                 return;
             }
+            // Body par class add karein taaki print media query sirf receipt modal ko target kare
+            document.body.classList.add('printing-receipt');
+            
             window.print();
+            
+            setTimeout(() => {
+                document.body.classList.remove('printing-receipt');
+            }, 500); 
         }
 
         /**
-         * Sale complete karta hai, cart clear karta hai aur modal band karta hai.
+         * Sale complete karta hai / Modal band karta hai, context ke aadhar par.
          */
         window.closeReceiptModal = function() {
-            if (lastTransaction) {
-                // Cart clear karein (jo abhi bhi purana data hold kar raha hoga)
+            if (!isHistoryView) {
+                // Sirf tab clear karein jab yeh ek naya sale ho
                 clearCart(); 
-                lastTransaction = null;
+                // Render sales history again to clear any existing filter after a new sale
+                document.getElementById('history-filter-input').value = '';
+                document.getElementById('today-filter-checkbox').checked = false;
+                window.renderSalesHistory();
                 showStatusToast("Sale successfully completed and cart cleared.");
             }
+            lastTransaction = null;
             hideModal('receipt-modal');
         }
         
@@ -768,26 +928,46 @@
             };
         }
 
-        function renderProducts() {
+        // Product Catalog ko render karta hai (Product Name se filter support karta hai)
+        window.renderProducts = function() {
             const listElement = document.getElementById('product-list');
             listElement.innerHTML = '';
             
-            if (products.length === 0) {
-                listElement.innerHTML = `<p class="text-slate-500 col-span-full">No products found. Add a new product above.</p>`;
+            // Product Filter Text hasil karein
+            const filterText = document.getElementById('product-filter-input').value.toLowerCase().trim();
+
+            let filteredProducts = products;
+
+            if (filterText) {
+                // Product name ke aadhar par filter karein
+                filteredProducts = products.filter(product => 
+                    product.name.toLowerCase().includes(filterText)
+                );
+            }
+            
+            if (filteredProducts.length === 0) {
+                const message = filterText 
+                    ? `No products found matching "${filterText}".` 
+                    : 'No products found. Add a new product above.';
+                listElement.innerHTML = `<p class="text-slate-500 col-span-full">${message}</p>`;
                 return;
             }
 
-            products.forEach(product => {
+            filteredProducts.forEach(product => {
                 const card = document.createElement('div');
                 card.className = 'relative flex flex-col items-center p-3 bg-indigo-100 rounded-xl shadow-md transition duration-150 transform hover:scale-[1.01]';
                 
                 card.innerHTML = `
-                    <!-- Edit Button -->
+                    <!-- Edit Button (Top Right) -->
                     <button onclick="openEditProductForm(${product.id})" class="absolute top-1 right-1 text-slate-500 hover:text-indigo-700 p-1 rounded-full bg-white/70 hover:bg-white transition z-10" aria-label="Edit ${product.name}">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.536L15.232 5.232z"></path></svg>
                     </button>
+                    <!-- DELETE Button (Top Left - Naya) -->
+                    <button onclick="deleteProduct(${product.id})" class="absolute top-1 left-1 text-red-500 hover:text-red-700 p-1 rounded-full bg-white/70 hover:bg-white transition z-10" aria-label="Delete ${product.name}">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                    </button>
                     <!-- Product Info -->
-                    <span class="text-3xl mb-1">${product.icon}</span>
+                    <span class="text-3xl mb-1 mt-4">${product.icon}</span>
                     <span class="text-sm font-semibold text-slate-800 text-center mt-1">${product.name}</span>
                     <span class="text-xs text-indigo-700 font-bold mb-3">${formatCurrency(product.price)}</span>
                     <!-- Add to Cart Button: Ab showQuantityModal call karta hai -->
@@ -848,25 +1028,80 @@
         
         // --- SALES HISTORY RENDERING (Local Storage) ---
 
-        function renderSalesHistory() {
+        // Function ko global scope mein available kar diya gaya hai taaki HTML oninput attribute use kar sake
+        window.renderSalesHistory = function() { 
             loadSalesHistory(); 
             
             const historyElement = document.getElementById('sales-history');
             historyElement.innerHTML = '';
             
-            if (salesHistory.length === 0) {
-                historyElement.innerHTML = `<p class="text-slate-500 italic">No sales recorded yet.</p>`;
+            // Filter controls se values hasil karein
+            const filterText = document.getElementById('history-filter-input').value.toLowerCase().trim();
+            const todayFilterChecked = document.getElementById('today-filter-checkbox').checked;
+            const printButton = document.getElementById('print-filtered-button');
+
+            let filteredHistory = salesHistory;
+            
+            // --- 1. Combined Filtering Logic ---
+            if (filterText || todayFilterChecked) {
+                filteredHistory = salesHistory.filter(data => {
+                    let matchesText = true;
+                    let matchesDate = true;
+
+                    // Text Filtering (ID, Date/Time, Total, Item Name)
+                    if (filterText) {
+                        const transactionIdMatch = data.transactionId.toLowerCase().includes(filterText);
+                        const dateMatch = data.dateTime.toLowerCase().includes(filterText);
+                        const totalMatch = data.total.toFixed(2).includes(filterText);
+                        
+                        // Item Name se match karein
+                        const itemNameMatch = data.items.some(item => 
+                            item.name.toLowerCase().includes(filterText)
+                        );
+                        matchesText = transactionIdMatch || dateMatch || totalMatch || itemNameMatch;
+                    }
+
+                    // Date Filtering (New)
+                    if (todayFilterChecked) {
+                        // Sale ka timestamp 'today' se match hona chahiye
+                        matchesDate = isToday(data.timestamp); 
+                    }
+
+                    return matchesText && matchesDate; // Dono conditions true honi chahiye
+                });
+            }
+            
+            // --- 2. Print Button State Update karein ---
+            // Print button sirf tab enable hoga jab koi filter laagu ho aur results hon
+            if (filteredHistory.length > 0 && (filterText || todayFilterChecked)) {
+                printButton.disabled = false;
+                printButton.classList.remove('disabled:opacity-50');
+            } else {
+                printButton.disabled = true;
+                printButton.classList.add('disabled:opacity-50');
+            }
+
+
+            if (filteredHistory.length === 0) {
+                historyElement.innerHTML = `<p class="text-slate-500 italic">No sales found matching the filter criteria.</p>`;
                 return;
             }
 
-            salesHistory.sort((a, b) => b.timestamp - a.timestamp) 
-                        .slice(0, 5) 
+            filteredHistory.sort((a, b) => b.timestamp - a.timestamp) 
+                        .slice(0, 100) // Sirf 100 sales tak dikhayein taaki performance theek rahe
                         .forEach(data => {
                             const time = data.timestamp ? new Date(data.timestamp).toLocaleTimeString() : 'N/A';
                             const uniqueId = `sale-details-${data.transactionId}`;
-                            
+
+                            // --- History Display Title ---
+                            const firstItemName = data.items.length > 0 ? data.items[0].name : 'Empty Sale';
+                            const summaryText = data.items.length > 1 
+                                ? `${firstItemName} + ${data.items.length - 1} aur items` 
+                                : firstItemName;
+                            // ------------------------------------------
+
                             const itemDetailsHtml = data.items.map(item => `
-                                <div class="flex justify-between text-xs py-[1px]">
+                                <div class="flex justify-between py-[1px]">
                                     <span class="font-medium">${item.name} (${item.quantity}x)</span>
                                     <span>${formatCurrency(item.price * item.quantity)}</span>
                                 </div>
@@ -890,11 +1125,21 @@
                                 <div class="flex justify-between items-center p-3 cursor-pointer hover:bg-slate-100 transition duration-100" 
                                      onclick="document.getElementById('${uniqueId}').classList.toggle('hidden')">
                                     <div class="flex flex-col">
-                                        <strong class="text-sm text-indigo-700">Sale #${data.transactionId}</strong>
-                                        <span class="text-xs text-slate-500">${time}</span>
+                                        <!-- Title ab Product Name se shuru hota hai -->
+                                        <strong class="text-sm text-indigo-700">${summaryText}</strong>
+                                        <span class="text-xs text-slate-500">ID: #${data.transactionId} | ${data.dateTime}</span>
                                     </div>
                                     <div class="flex items-center space-x-3">
                                         <span class="text-lg font-bold text-green-700">${formatCurrency(data.total)}</span>
+                                        
+                                        <!-- Print Button -->
+                                        <button onclick="event.stopPropagation(); openReceiptFromHistory('${data.transactionId}')" 
+                                                class="text-indigo-500 hover:text-indigo-700 p-1 rounded-full hover:bg-indigo-200 transition"
+                                                aria-label="View and Print Receipt Sale #${data.transactionId}">
+                                            <!-- Print icon (Adjusted stroke-width for visibility) -->
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2m0 0v-2a2 2 0 012-2h4a2 2 0 012 2v2m-6 0h6"></path></svg>
+                                        </button>
+                                        
                                         <!-- Delete Button -->
                                         <button onclick="event.stopPropagation(); deleteSale('${data.transactionId}')" 
                                                 class="text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-200 transition"
@@ -920,6 +1165,115 @@
                         });
         }
         
+        // Naya function: Filtered sales history list print karne ke liye
+        window.printFilteredHistory = function() {
+            const filterText = document.getElementById('history-filter-input').value.toLowerCase().trim();
+            const todayFilterChecked = document.getElementById('today-filter-checkbox').checked;
+            
+            // Sirf woh sales lein jo current filter criteria ko match karte hain
+            let salesToPrint = salesHistory;
+
+            if (filterText || todayFilterChecked) {
+                salesToPrint = salesHistory.filter(data => {
+                    let matchesText = true;
+                    let matchesDate = true;
+
+                    // Text Filtering
+                    if (filterText) {
+                        const transactionIdMatch = data.transactionId.toLowerCase().includes(filterText);
+                        const dateMatch = data.dateTime.toLowerCase().includes(filterText);
+                        const totalMatch = data.total.toFixed(2).includes(filterText);
+                        const itemNameMatch = data.items.some(item => 
+                            item.name.toLowerCase().includes(filterText)
+                        );
+                        matchesText = transactionIdMatch || dateMatch || totalMatch || itemNameMatch;
+                    }
+
+                    // Date Filtering
+                    if (todayFilterChecked) {
+                        matchesDate = isToday(data.timestamp); 
+                    }
+
+                    return matchesText && matchesDate;
+                });
+            }
+            
+            // Total Sales Amount aur item count calculate karein
+            const totalAmount = salesToPrint.reduce((sum, sale) => sum + sale.total, 0);
+            const totalCount = salesToPrint.length;
+
+            // Filter summary text
+            let filterSummary = 'All Sales';
+            if (todayFilterChecked && filterText) {
+                filterSummary = `Today's sales containing "${filterText}"`;
+            } else if (todayFilterChecked) {
+                filterSummary = "Today's Sales";
+            } else if (filterText) {
+                filterSummary = `Sales containing "${filterText}"`;
+            }
+
+            // Report HTML generate karein
+            let reportHtml = `
+                <div class="report-print-area p-5 bg-white text-sm">
+                    <div class="text-center mb-6 border-b pb-3">
+                        <h1 class="text-2xl font-extrabold text-slate-800">Sales Report</h1>
+                        <p class="text-xs text-slate-500">Generated: ${new Date().toLocaleString()}</p>
+                    </div>
+                    
+                    <div class="mb-6 bg-slate-100 p-3 rounded-lg border">
+                        <p class="font-bold text-slate-700 mb-1">Filter Summary:</p>
+                        <p class="text-base font-semibold text-indigo-700">${filterSummary} (${totalCount} Transactions)</p>
+                        <div class="flex justify-between font-bold text-lg mt-2 pt-2 border-t">
+                            <span>Total Revenue:</span>
+                            <span class="text-green-700">${formatCurrency(totalAmount)}</span>
+                        </div>
+                    </div>
+
+                    <h2 class="text-lg font-bold mb-3">Transaction Details:</h2>
+                    <div class="space-y-4">
+            `;
+
+            salesToPrint.forEach(data => {
+                const itemNames = data.items.map(item => `${item.name} (${item.quantity}x)`).join(', ');
+                reportHtml += `
+                    <div class="border border-slate-200 p-3 rounded-md">
+                        <div class="flex justify-between items-start mb-1">
+                            <span class="text-sm font-bold text-indigo-600">Sale #${data.transactionId}</span>
+                            <span class="text-sm font-bold text-green-700">${formatCurrency(data.total)}</span>
+                        </div>
+                        <p class="text-xs text-slate-500 mb-1">${data.dateTime}</p>
+                        <p class="text-xs">Items: ${itemNames}</p>
+                    </div>
+                `;
+            });
+
+            reportHtml += `
+                    </div>
+                    <div class="text-center mt-6 pt-4 border-t">
+                        <p class="text-xs text-slate-500">--- End of Report ---</p>
+                    </div>
+                </div>
+            `;
+            
+            // Report Print Area mein data daalein
+            const reportPrintArea = document.getElementById('report-print-area');
+            reportPrintArea.innerHTML = reportHtml;
+            
+            // Body par class add karein taaki print media query report print area ko target kare
+            document.body.classList.add('printing-report');
+            
+            // Print shuru karein
+            window.print();
+            
+            // Print hone ke baad class aur content hatayein
+            setTimeout(() => {
+                document.body.classList.remove('printing-report');
+                reportPrintArea.innerHTML = '';
+            }, 500); 
+
+            showStatusToast(`Printing report for ${totalCount} sales.`);
+        }
+        
         // --- START APP ---
         document.addEventListener('DOMContentLoaded', function() {
             loadProducts(); 
@@ -927,15 +1281,15 @@
             loadSalesHistory();
             loadDiscount(); 
             
-            renderProducts();
+            window.renderProducts(); // Update: Now calling through window
             renderCart(); 
-            renderSalesHistory();
+            window.renderSalesHistory();
 
             // Discount Input ke liye Event Listener
             const discountInput = document.getElementById('discount-input');
             if (discountInput) {
                 discountInput.addEventListener('input', function() {
-                    window.applyDiscount(this.value); // window.applyDiscount ko call karein
+                    window.applyDiscount(this.value); 
                 });
             }
             
@@ -945,7 +1299,17 @@
                 quantityInput.addEventListener('keydown', function(e) { 
                     if (e.key === 'Enter') {
                         e.preventDefault();
-                        window.submitQuantity(); // window.submitQuantity ko call karein
+                        window.submitQuantity(); 
+                    }
+                });
+            }
+            
+            // Product filter ke liye Enter key press par koi action nahi, sirf oninput se filter hoga
+            const productFilterInput = document.getElementById('product-filter-input');
+            if (productFilterInput) {
+                productFilterInput.addEventListener('keydown', function(e) {
+                    if (e.key === 'Enter') {
+                        e.preventDefault(); 
                     }
                 });
             }
