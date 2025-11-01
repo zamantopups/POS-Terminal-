@@ -1,0 +1,955 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modern Cloud POS Terminal</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Use Inter font -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f0f4f8; /* Halka neela-grai background */
+        }
+        /* Collapsible form ke liye custom class */
+        .collapsible-form {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-in-out, padding 0.3s ease-in-out;
+        }
+        .collapsible-form.open {
+            max-height: 500px; /* Samagri dikhane ke liye paryapt unchai */
+            padding-top: 1rem;
+            padding-bottom: 1rem;
+        }
+        /* Modal overlay ke liye style */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.6);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+            backdrop-filter: blur(2px);
+        }
+
+        /* Temporary Alert/Toast Message */
+        #status-toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 100;
+            opacity: 0;
+            transition: opacity 0.5s ease-in-out, transform 0.5s ease-in-out;
+            transform: translateY(20px);
+            pointer-events: none;
+        }
+        #status-toast.show {
+            opacity: 1;
+            transform: translateY(0);
+        }
+        
+        /* Print-specific styles: Sirf Receipt Modal ko print karne ke liye */
+        @media print {
+            /* Main app content chhupayein */
+            #app {
+                display: none !important; 
+            }
+            /* Modal ko print karne ke liye reset karein */
+            #receipt-modal {
+                position: static !important;
+                display: flex !important;
+                width: 100%;
+                height: 100%;
+                margin: 0;
+                padding: 0;
+                background: none;
+                align-items: flex-start; /* Receipt ko page ke top par align karein */
+            }
+            /* Shadow aur borders hata dein */
+            .shadow-2xl, .shadow-md, .rounded-xl {
+                box-shadow: none !important;
+                border-radius: 0 !important;
+            }
+            /* Print buttons chhupayein */
+            .print\:hidden { 
+                display: none !important;
+            }
+            /* Receipt content ke liye chhota width set karein */
+            .print-area {
+                width: 300px;
+                max-width: 300px;
+                margin: 0 auto;
+                padding: 10px;
+                border: none;
+            }
+        }
+    </style>
+</head>
+<body>
+
+    <div id="app" class="min-h-screen p-2 md:p-6">
+        <header class="mb-4 bg-white p-4 rounded-xl shadow-lg flex justify-between items-center sticky top-0 z-10">
+            <h1 class="text-3xl font-extrabold text-indigo-700 tracking-tight">POS Terminal</h1>
+            <div id="user-info" class="text-sm font-medium text-slate-600">
+                <span id="user-id-display">Storage: Local Browser</span>
+            </div>
+        </header>
+
+        <div class="flex flex-col md:flex-row gap-4">
+
+            <!-- Left Panel: Product Catalog -->
+            <div class="md:w-3/5 lg:w-2/3 p-4 bg-white rounded-xl shadow-lg">
+                <h2 class="text-xl font-bold text-slate-800 mb-4 border-b pb-2 flex justify-between items-center">
+                    <span>Product Catalog (Menu)</span>
+                    <button onclick="toggleProductForm()" class="bg-indigo-500 hover:bg-indigo-600 text-white text-sm font-medium py-1 px-3 rounded-full transition duration-150 shadow-md transform hover:scale-[1.05]">
+                        + Add Product
+                    </button>
+                </h2>
+
+                <!-- Product Addition / Edit Form (Collapsible) -->
+                <div id="product-form-container" class="collapsible-form hidden bg-slate-50 border border-indigo-200 rounded-lg mb-4">
+                    <form id="new-product-form" class="space-y-3">
+                        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                            <input type="text" id="new-product-name" placeholder="Product Name (e.g., Burger)" class="p-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500 col-span-1 sm:col-span-2" required>
+                            <input type="number" id="new-product-price" placeholder="Price in PKR" step="0.01" class="p-2 border rounded-md focus:ring-indigo-500 focus:border-indigo-500" required>
+                        </div>
+                        <div class="flex space-x-3 items-center">
+                            <input type="text" id="new-product-icon" placeholder="Emoji Icon (Optional, e.g., 🍔)" class="p-2 border rounded-md w-full focus:ring-indigo-500 focus:border-indigo-500">
+                            <button type="submit" id="form-submit-button" onclick="saveProduct(event)" class="bg-green-500 hover:bg-green-600 text-white font-medium py-2 px-4 rounded-md transition duration-150 shadow">
+                                Save Product
+                            </button>
+                        </div>
+                        <p id="product-error-message" class="text-red-500 text-sm hidden"></p>
+                    </form>
+                </div>
+                
+                <div id="product-list" class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                    <!-- JavaScript dwara product buttons yahan render kiye jayenge -->
+                    <p id="loading-message" class="text-slate-500 col-span-full">Products loading...</p>
+                </div>
+            </div>
+
+            <!-- Right Panel: Cart and Checkout -->
+            <div class="md:w-2/5 lg:w-1/3 flex flex-col gap-4">
+                
+                <!-- Cart Display -->
+                <div class="bg-white p-4 rounded-xl shadow-lg flex-grow">
+                    <h2 class="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Sales Cart (Bill)</h2>
+                    
+                    <div class="h-64 overflow-y-auto mb-4 border rounded-lg p-2 bg-slate-50">
+                        <table class="min-w-full text-sm text-left text-slate-600">
+                            <thead>
+                                <tr class="border-b text-slate-700">
+                                    <th class="py-1">Item</th>
+                                    <th class="py-1 text-center w-1/4">Qty</th>
+                                    <th class="py-1 text-right w-1/4">Total</th>
+                                </tr>
+                            </thead>
+                            <tbody id="cart-items">
+                                <!-- Cart items yahan render kiye jayenge -->
+                                <tr id="empty-cart-message">
+                                    <td colspan="3" class="py-4 text-center text-slate-400 italic">No items in cart.</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+
+                    <!-- Totals Summary -->
+                    <div class="space-y-2 border-t pt-4">
+                        <!-- Subtotal before Discount (Gross) -->
+                        <div class="flex justify-between text-sm text-slate-600">
+                            <span>Subtotal (Gross):</span>
+                            <span id="subtotal-gross-display">0.00 PKR</span>
+                        </div>
+                        
+                        <!-- Discount Input and Display -->
+                        <div class="flex justify-between items-center">
+                            <label for="discount-input" class="text-sm text-red-600 font-bold">Discount (<span id="discount-percentage-display">0</span>%):</label>
+                            <div class="flex items-center space-x-2">
+                                <input type="number" id="discount-input" placeholder="0" min="0" max="100" value="0"
+                                    class="w-16 p-1 border rounded-md text-right text-sm focus:ring-red-500 focus:border-red-500">
+                                <span id="discount-amount-display" class="text-red-600 font-medium">- PKR 0.00</span>
+                            </div>
+                        </div>
+
+                        <!-- Grand Total (Net Subtotal) -->
+                        <div class="flex justify-between text-2xl font-extrabold text-indigo-700 border-t pt-2">
+                            <span>Grand Total:</span>
+                            <span id="grand-total-display">0.00 PKR</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Action Buttons -->
+                <div class="flex flex-col space-y-3">
+                    <button onclick="checkout()" class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 rounded-lg shadow-md transition duration-150 transform hover:scale-[1.01] focus:outline-none focus:ring-4 focus:ring-green-300">
+                        Checkout & Finalize Sale (<span id="checkout-total">0.00</span> PKR)
+                    </button>
+                    <button onclick="clearCart()" class="w-full bg-red-500 hover:bg-red-600 text-white font-medium py-2 rounded-lg shadow transition duration-150 focus:outline-none focus:ring-2 focus:ring-red-300">
+                        Clear Cart (Reset)
+                    </button>
+                </div>
+                
+                <!-- History Section -->
+                <div class="bg-white p-4 rounded-xl shadow-lg">
+                    <h2 class="text-xl font-bold text-slate-800 mb-4 border-b pb-2">Sales History</h2>
+                    <div id="sales-history" class="text-sm space-y-1 h-56 overflow-y-auto">
+                        <p class="text-slate-500 italic">Loading sales records...</p>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <!-- 1. Custom Quantity Input Modal (Hidden) -->
+    <div id="quantity-modal" class="modal-overlay hidden">
+        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm transform transition-all">
+            <h3 class="text-xl font-bold text-indigo-700 mb-4">Enter Quantity</h3>
+            <p class="text-slate-600 mb-4">Adding: <span id="modal-item-name" class="font-semibold text-slate-800"></span></p>
+            <input type="number" id="modal-quantity-input" min="1" value="1" 
+                   class="w-full p-3 border border-indigo-300 rounded-lg text-xl text-center focus:ring-indigo-500 focus:border-indigo-500 mb-4">
+            
+            <div class="flex justify-end space-x-3">
+                <button onclick="hideModal('quantity-modal')" class="bg-slate-300 hover:bg-slate-400 text-slate-800 font-medium py-2 px-4 rounded-lg transition duration-150 shadow">
+                    Cancel
+                </button>
+                <button onclick="submitQuantity()" id="modal-add-button" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 px-4 rounded-lg transition duration-150 shadow">
+                    Add to Cart
+                </button>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 2. Receipt View Modal (Hidden) -->
+    <div id="receipt-modal" class="modal-overlay hidden">
+        <div class="bg-white p-6 rounded-xl shadow-2xl w-full max-w-sm transform transition-all print-area">
+            <div id="receipt-content" class="bg-white p-2 text-sm">
+                <!-- Receipt details will be injected here -->
+            </div>
+
+            <div class="flex flex-col space-y-3 mt-6 print:hidden">
+                <button onclick="printReceipt()" class="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-2 rounded-lg shadow-md transition duration-150 transform hover:scale-[1.01] focus:outline-none focus:ring-4 focus:ring-indigo-300">
+                    🖨️ Print Receipt
+                </button>
+                <button onclick="closeReceiptModal()" class="w-full bg-green-500 hover:bg-green-600 text-white font-medium py-2 rounded-lg shadow transition duration-150 focus:outline-none focus:ring-2 focus:ring-green-300">
+                    Complete & Clear Sale
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Status Toast Message -->
+    <div id="status-toast" class="p-4 bg-indigo-600 text-white rounded-lg shadow-xl font-semibold">
+        <!-- Message JavaScript dwara set kiya jayega -->
+    </div>
+
+    <script type="module">
+        // --- LOCAL STORAGE KEYS ---
+        const CART_STORAGE_KEY = 'pos_cart';
+        const SALES_HISTORY_KEY = 'pos_sales_history';
+        const PRODUCTS_STORAGE_KEY = 'pos_products'; 
+        const DISCOUNT_STORAGE_KEY = 'pos_discount_percentage'; 
+
+        // --- DEFAULT APP STATE ---
+        const defaultProducts = [
+            { id: 1, name: "Latte Coffee", price: 250.00, icon: '☕' },
+            { id: 2, name: "Chicken Sandwich", price: 550.00, icon: '🥪' },
+            { id: 3, name: "Water Bottle (Large)", price: 80.00, icon: '💧' },
+            { id: 4, name: "Chocolate Cake Slice", price: 420.00, icon: '🍰' },
+            { id: 5, name: "Espresso Shot", price: 180.00, icon: '☕' },
+            { id: 6, name: "French Fries", price: 300.00, icon: '🍟' },
+            { id: 7, name: "Iced Tea", price: 150.00, icon: '🥤' },
+            { id: 8, name: "Magazine", price: 120.00, icon: '📰' },
+        ];
+        
+        // --- APP STATE ---
+        let products = [];
+        let cart = [];
+        let salesHistory = [];
+        let editingProductId = null; 
+        let discountPercentage = 0; 
+        let currentProductIdForModal = null; 
+        let lastTransaction = null; // Global variable to hold the transaction data for the receipt
+
+        // --- UTILITY FUNCTIONS (Standard Functions) ---
+
+        function formatCurrency(amount) {
+            return `PKR ${amount.toFixed(2)}`;
+        }
+        
+        // Currency ko bina 'PKR' ke format karta hai
+        function formatRawCurrency(amount) {
+            return amount.toFixed(2);
+        }
+
+        function displayError(message) {
+            const errorElement = document.getElementById('product-error-message');
+            errorElement.textContent = message;
+            errorElement.classList.remove('hidden');
+            setTimeout(() => {
+                errorElement.classList.add('hidden');
+            }, 3000); 
+        }
+
+        /**
+         * Screen par temporary status message (toast) dikhata hai.
+         */
+        function showStatusToast(message, type = 'success') {
+            const toast = document.getElementById('status-toast');
+            toast.textContent = message;
+            
+            // Type ke aadhar par color classes laagu karein
+            toast.classList.remove('bg-red-600', 'bg-indigo-600');
+            toast.classList.add(type === 'error' ? 'bg-red-600' : 'bg-indigo-600');
+
+            // Toast dikhayein
+            toast.classList.add('show');
+            
+            // 3 seconds ke baad toast chhupayein
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000); 
+        }
+
+        /**
+         * ID dwara generic modal dikhata hai
+         */
+        function showModal(modalId) {
+            document.getElementById(modalId).classList.remove('hidden');
+        }
+
+        /**
+         * ID dwara generic modal chhipata hai (window scope mein rakha gaya)
+         */
+        window.hideModal = function(modalId) {
+            document.getElementById(modalId).classList.add('hidden');
+        }
+
+
+        // --- LOCAL STORAGE FUNCTIONS ---
+
+        function loadProducts() {
+            try {
+                const storedProducts = localStorage.getItem(PRODUCTS_STORAGE_KEY);
+                if (storedProducts) {
+                    products = JSON.parse(storedProducts);
+                } else {
+                    products = defaultProducts;
+                    saveProducts();
+                }
+            } catch (error) {
+                console.error("Error loading products from local storage:", error);
+                products = defaultProducts;
+            }
+        }
+
+        function saveProducts() {
+            try {
+                localStorage.setItem(PRODUCTS_STORAGE_KEY, JSON.stringify(products));
+            } catch (error) {
+                console.error("Error saving products to local storage:", error);
+            }
+        }
+        
+        function loadCart() {
+            try {
+                const storedCart = localStorage.getItem(CART_STORAGE_KEY);
+                cart = storedCart ? JSON.parse(storedCart) : [];
+            } catch (error) {
+                console.error("Error loading cart from local storage:", error);
+                cart = [];
+            }
+        }
+
+        function saveCart() {
+            try {
+                localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(cart));
+            } catch (error) {
+                console.error("Error saving cart to local storage:", error);
+            }
+        }
+        
+        function loadDiscount() {
+            try {
+                const storedDiscount = localStorage.getItem(DISCOUNT_STORAGE_KEY);
+                discountPercentage = storedDiscount ? parseFloat(storedDiscount) : 0;
+                
+                const discountInput = document.getElementById('discount-input');
+                if (discountInput) {
+                    discountInput.value = discountPercentage;
+                }
+            } catch (error) {
+                console.error("Error loading discount:", error);
+                discountPercentage = 0;
+            }
+        }
+
+        function saveDiscount(percentage) {
+            discountPercentage = percentage;
+            try {
+                localStorage.setItem(DISCOUNT_STORAGE_KEY, discountPercentage.toString());
+            } catch (error) {
+                console.error("Error saving discount:", error);
+            }
+        }
+
+        function loadSalesHistory() {
+            try {
+                const storedHistory = localStorage.getItem(SALES_HISTORY_KEY);
+                salesHistory = storedHistory ? JSON.parse(storedHistory) : [];
+            } catch (error) {
+                console.error("Error loading sales history from local storage:", error);
+                salesHistory = [];
+            }
+        }
+        
+        function saveSalesHistory() {
+            try {
+                localStorage.setItem(SALES_HISTORY_KEY, JSON.stringify(salesHistory));
+            } catch (error) {
+                console.error("Error saving sales history to local storage:", error);
+            }
+        }
+
+        function saveSaleToLocal(transaction) {
+            // Sorting ke liye client-side timestamp jodein
+            transaction.timestamp = new Date().getTime();
+            salesHistory.push(transaction);
+            saveSalesHistory();
+        }
+        
+        window.deleteSale = function(transactionId) {
+            salesHistory = salesHistory.filter(sale => sale.transactionId !== transactionId);
+            saveSalesHistory();
+            renderSalesHistory();
+            showStatusToast(`Sale #${transactionId} deleted.`);
+            console.log(`Transaction #${transactionId} removed from history.`);
+        } 
+
+        // --- PRODUCT MANAGEMENT (Window scope mein rakha gaya) ---
+        
+        window.toggleProductForm = function(isEditing = false) {
+            const formContainer = document.getElementById('product-form-container');
+            const submitButton = document.getElementById('form-submit-button');
+            const form = document.getElementById('new-product-form');
+
+            if (!formContainer.classList.contains('open') || !isEditing) {
+                form.reset();
+                editingProductId = null;
+                submitButton.textContent = 'Save Product';
+            }
+
+            formContainer.classList.toggle('open');
+            if (formContainer.classList.contains('open')) {
+                formContainer.classList.remove('hidden');
+            } else {
+                setTimeout(() => formContainer.classList.add('hidden'), 300);
+            }
+        } 
+
+        window.openEditProductForm = function(productId) {
+            const product = findProduct(productId);
+            if (!product) {
+                displayError(`Product ID ${productId} not found.`);
+                return;
+            }
+
+            editingProductId = productId;
+
+            document.getElementById('new-product-name').value = product.name;
+            document.getElementById('new-product-price').value = product.price;
+            document.getElementById('new-product-icon').value = product.icon;
+
+            document.getElementById('form-submit-button').textContent = 'Save Changes';
+
+            const formContainer = document.getElementById('product-form-container');
+            if (!formContainer.classList.contains('open')) {
+                formContainer.classList.add('open');
+                formContainer.classList.remove('hidden');
+            }
+            document.getElementById('new-product-name').focus();
+        } 
+
+        window.saveProduct = function(event) {
+            event.preventDefault(); 
+            
+            const nameInput = document.getElementById('new-product-name');
+            const priceInput = document.getElementById('new-product-price');
+            const iconInput = document.getElementById('new-product-icon');
+
+            const name = nameInput.value.trim();
+            const price = parseFloat(priceInput.value);
+            const icon = iconInput.value.trim() || '📦';
+
+            if (!name) {
+                displayError("Product Name is required.");
+                return;
+            }
+            if (isNaN(price) || price <= 0) {
+                displayError("Please enter a valid price greater than zero.");
+                return;
+            }
+
+            let productToSave;
+
+            if (editingProductId !== null) {
+                productToSave = products.find(p => p.id === editingProductId);
+                if (productToSave) {
+                    productToSave.name = name;
+                    productToSave.price = price;
+                    productToSave.icon = icon;
+                    showStatusToast(`Product '${name}' updated.`);
+                }
+            } else {
+                const newId = products.length > 0 ? Math.max(...products.map(p => p.id)) + 1 : 1;
+                
+                productToSave = {
+                    id: newId,
+                    name: name,
+                    price: price,
+                    icon: icon
+                };
+                products.push(productToSave);
+                showStatusToast(`New product '${name}' added.`);
+            }
+
+            saveProducts();
+            renderProducts();
+
+            document.getElementById('new-product-form').reset();
+            editingProductId = null;
+            document.getElementById('form-submit-button').textContent = 'Save Product';
+            toggleProductForm(false);
+        } 
+
+        // --- CART MANAGEMENT (Window scope mein rakha gaya) ---
+
+        function findProduct(id) {
+            return products.find(p => p.id === id);
+        }
+
+        window.addToCart = function(productId, quantity = 1) {
+            quantity = parseInt(quantity, 10);
+            if (isNaN(quantity) || quantity <= 0) return; 
+
+            const product = findProduct(productId);
+            if (!product) return;
+
+            const existingItem = cart.find(item => item.id === productId);
+
+            if (existingItem) {
+                existingItem.quantity += quantity;
+            } else {
+                cart.push({
+                    id: product.id,
+                    name: product.name,
+                    price: product.price,
+                    quantity: quantity
+                });
+            }
+            saveCart(); 
+            renderCart();
+            showStatusToast(`${quantity} x ${product.name} added to cart.`);
+        } 
+
+        window.updateCartQuantity = function(productId, newQuantity) {
+            const quantity = parseInt(newQuantity, 10);
+            const itemIndex = cart.findIndex(item => item.id === productId);
+
+            if (itemIndex === -1) return;
+
+            if (quantity <= 0) {
+                const itemName = cart[itemIndex].name;
+                cart.splice(itemIndex, 1);
+                showStatusToast(`${itemName} removed from cart.`, 'error');
+            } else {
+                cart[itemIndex].quantity = quantity;
+            }
+
+            saveCart();
+            renderCart();
+        } 
+
+        // --- MODAL MANAGEMENT FUNCTIONS (Window scope mein rakha gaya) ---
+
+        window.showQuantityModal = function(productId) {
+            const product = findProduct(productId);
+            if (!product) return;
+            
+            currentProductIdForModal = productId;
+
+            document.getElementById('modal-item-name').textContent = product.name;
+            document.getElementById('modal-quantity-input').value = 1; // 1 par reset karein
+            showModal('quantity-modal');
+            document.getElementById('modal-quantity-input').focus();
+        } 
+
+
+        window.submitQuantity = function() {
+            const quantityInput = document.getElementById('modal-quantity-input');
+            const quantity = parseInt(quantityInput.value, 10);
+
+            if (currentProductIdForModal !== null && quantity > 0) {
+                window.addToCart(currentProductIdForModal, quantity);
+                hideModal('quantity-modal');
+            } else if (quantity <= 0) {
+                console.error("Quantity must be greater than zero.");
+            }
+        } 
+
+        window.applyDiscount = function(value) {
+            let percentage = parseFloat(value);
+            if (isNaN(percentage) || percentage < 0) {
+                percentage = 0;
+            } else if (percentage > 100) {
+                percentage = 100;
+            }
+            document.getElementById('discount-input').value = percentage; 
+            saveDiscount(percentage);
+            renderCart(); 
+        } 
+
+        window.clearCart = function() {
+            cart = [];
+            applyDiscount(0); 
+            
+            saveCart(); 
+            renderCart();
+            showStatusToast("Cart has been cleared.", 'error');
+        } 
+
+        window.checkout = function() {
+            if (cart.length === 0) {
+                showStatusToast("Cannot checkout. Cart is empty!", 'error');
+                return;
+            }
+
+            const totals = calculateTotals();
+            
+            // Transaction object banayein
+            const transaction = {
+                items: JSON.parse(JSON.stringify(cart)), 
+                subtotal: totals.subtotal, 
+                subtotalGross: totals.subtotalBeforeDiscount, 
+                discount: totals.discountAmount,
+                discountPercentage: discountPercentage,
+                total: totals.grandTotal,
+                transactionId: crypto.randomUUID().substring(0, 8),
+                dateTime: new Date().toLocaleString(),
+                timestamp: new Date().getTime()
+            };
+            
+            // 1. Sale save karein
+            saveSaleToLocal(transaction); 
+            renderSalesHistory();
+
+            // 2. Receipt Modal kholein aur transaction data pass karein
+            openReceiptModal(transaction);
+        } 
+        
+        /**
+         * Receipt Modal kholta hai aur transaction data bharata hai.
+         */
+        function openReceiptModal(transaction) {
+            lastTransaction = transaction;
+            const receiptContentElement = document.getElementById('receipt-content');
+            receiptContentElement.innerHTML = generateReceiptHTML(transaction);
+            showModal('receipt-modal');
+            showStatusToast(`Sale #${transaction.transactionId} recorded. Receipt ready.`, 'success');
+        }
+
+        /**
+         * Receipt print karta hai.
+         */
+        window.printReceipt = function() {
+            if (!lastTransaction) {
+                showStatusToast("Error: No transaction data to print.", 'error');
+                return;
+            }
+            window.print();
+        }
+
+        /**
+         * Sale complete karta hai, cart clear karta hai aur modal band karta hai.
+         */
+        window.closeReceiptModal = function() {
+            if (lastTransaction) {
+                // Cart clear karein (jo abhi bhi purana data hold kar raha hoga)
+                clearCart(); 
+                lastTransaction = null;
+                showStatusToast("Sale successfully completed and cart cleared.");
+            }
+            hideModal('receipt-modal');
+        }
+        
+        /**
+         * Receipt ka HTML content generate karta hai.
+         */
+        function generateReceiptHTML(transaction) {
+            const itemsHtml = transaction.items.map(item => `
+                <div class="flex justify-between py-[2px] text-xs">
+                    <span>${item.name}</span>
+                    <span>${item.quantity} x ${formatRawCurrency(item.price)}</span>
+                    <span class="font-medium">${formatRawCurrency(item.price * item.quantity)}</span>
+                </div>
+            `).join('');
+            
+            let discountSection = '';
+            if (transaction.discount > 0) {
+                discountSection = `
+                    <div class="flex justify-between text-xs pt-1 border-t border-dashed mt-1">
+                        <span class="font-bold text-red-600">Discount (${transaction.discountPercentage}%):</span>
+                        <span class="font-bold text-red-600">- ${formatRawCurrency(transaction.discount)}</span>
+                    </div>
+                `;
+            }
+
+            return `
+                <div class="text-center mb-4">
+                    <h1 class="text-lg font-bold">POS Receipt</h1>
+                    <p class="text-xs text-slate-500">Transaction ID: #${transaction.transactionId}</p>
+                    <p class="text-xs text-slate-500">${transaction.dateTime}</p>
+                </div>
+                
+                <div class="border-t border-b border-dashed py-2 mb-2">
+                    ${itemsHtml}
+                </div>
+
+                <div class="space-y-1">
+                    <div class="flex justify-between text-sm font-semibold">
+                        <span>Gross Subtotal:</span>
+                        <span>${formatRawCurrency(transaction.subtotalGross)}</span>
+                    </div>
+                    ${discountSection}
+                    <div class="flex justify-between text-xl font-extrabold border-t-2 pt-2 mt-2 border-slate-800">
+                        <span>TOTAL:</span>
+                        <span>${formatCurrency(transaction.total)}</span>
+                    </div>
+                </div>
+                
+                <div class="text-center mt-6 pt-4 border-t border-dashed">
+                    <p class="text-xs">Thank You for your visit!</p>
+                </div>
+            `;
+        }
+
+        // --- UI RENDERING FUNCTIONS ---
+
+        function calculateTotals() {
+            const subtotalBeforeDiscount = cart.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+            
+            // 1. Discount Amount calculate karein
+            const discountRate = discountPercentage / 100;
+            const discountAmount = subtotalBeforeDiscount * discountRate;
+
+            // 2. Discount ke baad Subtotal calculate karein (Net)
+            const subtotal = subtotalBeforeDiscount - discountAmount;
+            
+            // 3. Tax 0.00 hai
+            const tax = 0.00; 
+            
+            // 4. Grand Total ab Net Subtotal hai
+            const grandTotal = subtotal;
+
+            return { 
+                subtotalBeforeDiscount, // Gross Subtotal
+                discountAmount,         // Discount Value
+                subtotal,               // Net Subtotal (Final cost)
+                tax, 
+                grandTotal 
+            };
+        }
+
+        function renderProducts() {
+            const listElement = document.getElementById('product-list');
+            listElement.innerHTML = '';
+            
+            if (products.length === 0) {
+                listElement.innerHTML = `<p class="text-slate-500 col-span-full">No products found. Add a new product above.</p>`;
+                return;
+            }
+
+            products.forEach(product => {
+                const card = document.createElement('div');
+                card.className = 'relative flex flex-col items-center p-3 bg-indigo-100 rounded-xl shadow-md transition duration-150 transform hover:scale-[1.01]';
+                
+                card.innerHTML = `
+                    <!-- Edit Button -->
+                    <button onclick="openEditProductForm(${product.id})" class="absolute top-1 right-1 text-slate-500 hover:text-indigo-700 p-1 rounded-full bg-white/70 hover:bg-white transition z-10" aria-label="Edit ${product.name}">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.536L15.232 5.232z"></path></svg>
+                    </button>
+                    <!-- Product Info -->
+                    <span class="text-3xl mb-1">${product.icon}</span>
+                    <span class="text-sm font-semibold text-slate-800 text-center mt-1">${product.name}</span>
+                    <span class="text-xs text-indigo-700 font-bold mb-3">${formatCurrency(product.price)}</span>
+                    <!-- Add to Cart Button: Ab showQuantityModal call karta hai -->
+                    <button onclick="showQuantityModal(${product.id})" class="w-full bg-indigo-500 hover:bg-indigo-600 text-white text-xs font-medium py-1 rounded-lg transition transform hover:scale-[1.03]">
+                        Add to Cart
+                    </button>
+                `;
+                listElement.appendChild(card);
+            });
+        }
+
+        function renderCart() {
+            const cartItemsElement = document.getElementById('cart-items');
+            
+            cartItemsElement.innerHTML = '';
+            
+            if (cart.length === 0) {
+                cartItemsElement.innerHTML = `
+                    <tr id="empty-cart-message">
+                        <td colspan="3" class="py-4 text-center text-slate-400 italic">No items in cart.</td>
+                    </tr>
+                `;
+            } else {
+                cart.forEach(item => {
+                    const row = document.createElement('tr');
+                    row.className = 'border-b last:border-b-0 hover:bg-slate-100';
+                    const itemTotal = item.price * item.quantity;
+                    row.innerHTML = `
+                        <td class="py-2 pr-2 font-medium">
+                            ${item.name}
+                            <span class="block text-xs text-slate-400 font-normal">${formatCurrency(item.price)} each</span>
+                        </td>
+                        <!-- Aasaan editing ke liye Quantity Input field -->
+                        <td class="py-2 text-center">
+                            <input type="number" value="${item.quantity}" min="0" 
+                                onchange="updateCartQuantity(${item.id}, this.value)" 
+                                class="w-16 p-1 border border-slate-300 rounded-md text-center text-sm focus:ring-indigo-500 focus:border-indigo-500">
+                        </td>
+                        <td class="py-2 text-right font-semibold">
+                            ${formatCurrency(itemTotal)}
+                        </td>
+                    `;
+                    cartItemsElement.appendChild(row);
+                });
+            }
+            
+            const totals = calculateTotals();
+
+            document.getElementById('discount-percentage-display').textContent = discountPercentage;
+            document.getElementById('discount-amount-display').textContent = `- ${formatCurrency(totals.discountAmount)}`;
+            
+            document.getElementById('subtotal-gross-display').textContent = formatCurrency(totals.subtotalBeforeDiscount);
+            
+            document.getElementById('grand-total-display').textContent = formatCurrency(totals.grandTotal);
+            
+            document.getElementById('checkout-total').textContent = totals.grandTotal.toFixed(2);
+        }
+        
+        // --- SALES HISTORY RENDERING (Local Storage) ---
+
+        function renderSalesHistory() {
+            loadSalesHistory(); 
+            
+            const historyElement = document.getElementById('sales-history');
+            historyElement.innerHTML = '';
+            
+            if (salesHistory.length === 0) {
+                historyElement.innerHTML = `<p class="text-slate-500 italic">No sales recorded yet.</p>`;
+                return;
+            }
+
+            salesHistory.sort((a, b) => b.timestamp - a.timestamp) 
+                        .slice(0, 5) 
+                        .forEach(data => {
+                            const time = data.timestamp ? new Date(data.timestamp).toLocaleTimeString() : 'N/A';
+                            const uniqueId = `sale-details-${data.transactionId}`;
+                            
+                            const itemDetailsHtml = data.items.map(item => `
+                                <div class="flex justify-between text-xs py-[1px]">
+                                    <span class="font-medium">${item.name} (${item.quantity}x)</span>
+                                    <span>${formatCurrency(item.price * item.quantity)}</span>
+                                </div>
+                            `).join('');
+                            
+                            let discountHtml = '';
+                            if (data.discount > 0) {
+                                discountHtml = `
+                                    <div class="flex justify-between text-xs text-red-600">
+                                        <span class="font-bold">Discount (${data.discountPercentage}%):</span>
+                                        <span class="font-bold">- ${formatCurrency(data.discount)}</span>
+                                    </div>
+                                `;
+                            }
+                            
+                            const historyCard = document.createElement('div');
+                            historyCard.className = 'bg-slate-50 border border-slate-200 rounded-lg shadow-sm mb-2';
+                            
+                            historyCard.innerHTML = `
+                                <!-- Header (Details toggle karne ke liye clickable) -->
+                                <div class="flex justify-between items-center p-3 cursor-pointer hover:bg-slate-100 transition duration-100" 
+                                     onclick="document.getElementById('${uniqueId}').classList.toggle('hidden')">
+                                    <div class="flex flex-col">
+                                        <strong class="text-sm text-indigo-700">Sale #${data.transactionId}</strong>
+                                        <span class="text-xs text-slate-500">${time}</span>
+                                    </div>
+                                    <div class="flex items-center space-x-3">
+                                        <span class="text-lg font-bold text-green-700">${formatCurrency(data.total)}</span>
+                                        <!-- Delete Button -->
+                                        <button onclick="event.stopPropagation(); deleteSale('${data.transactionId}')" 
+                                                class="text-red-500 hover:text-red-700 p-1 rounded-full hover:bg-red-200 transition"
+                                                aria-label="Delete Sale #${data.transactionId}">
+                                            <!-- Trash icon -->
+                                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>
+                                        </button>
+                                    </div>
+                                </div>
+
+                                <!-- Details (Default roop se chhipa hua) -->
+                                <div id="${uniqueId}" class="hidden p-3 pt-0 border-t border-slate-200">
+                                    <p class="font-bold text-xs mb-1 text-slate-600">Items Sold:</p>
+                                    ${itemDetailsHtml}
+                                    <div class="flex justify-between text-xs border-t border-dashed mt-2 pt-2">
+                                        <span class="font-bold">Subtotal (Gross):</span>
+                                        <span class="font-bold">${formatCurrency(data.subtotalGross)}</span>
+                                    </div>
+                                    ${discountHtml}
+                                </div>
+                            `;
+                            historyElement.appendChild(historyCard);
+                        });
+        }
+        
+        // --- START APP ---
+        document.addEventListener('DOMContentLoaded', function() {
+            loadProducts(); 
+            loadCart();
+            loadSalesHistory();
+            loadDiscount(); 
+            
+            renderProducts();
+            renderCart(); 
+            renderSalesHistory();
+
+            // Discount Input ke liye Event Listener
+            const discountInput = document.getElementById('discount-input');
+            if (discountInput) {
+                discountInput.addEventListener('input', function() {
+                    window.applyDiscount(this.value); // window.applyDiscount ko call karein
+                });
+            }
+            
+            // Modal mein Enter key dwara quick quantity addition ke liye event listener set karein
+            const quantityInput = document.getElementById('modal-quantity-input');
+            if (quantityInput) {
+                quantityInput.addEventListener('keydown', function(e) { 
+                    if (e.key === 'Enter') {
+                        e.preventDefault();
+                        window.submitQuantity(); // window.submitQuantity ko call karein
+                    }
+                });
+            }
+        }); 
+    </script>
+</body>
+</html>
